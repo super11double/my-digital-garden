@@ -6,7 +6,7 @@ generate_index.py — 紧急隐私修正版：仅列出 frontmatter 中 share: t
 - 默认只显示带 `share: true` 的笔记（frontmatter），避免意外公开私密笔记
 - 支持 --include-private 覆盖（管理员模式）
 - 保留先前的健壮特性：原子写入、备份轮换、frontmatter title、URL 编码开关、dry-run、verbose 等
-- 优先使用 frontmatter 中的 `dg-permalink` 作为对外链接（如果存在），并将索引指向 `.html` 页面（可读友好）
+- 优先使用 frontmatter 中的 `dg-permalink` 作为对外链接（如果存在），并将索引指向已发布页面的友好路径（不强制 .html）
 """
 from pathlib import Path
 import argparse
@@ -118,7 +118,7 @@ def scan_markdown_files(root: Path, cfg: dict, include_private: bool, verbose=Fa
 def make_href(rel_path: Path, encode: bool) -> str:
     url_path = str(rel_path).replace(os.sep, '/')
     if encode:
-        return urllib.parse.quote(url_path, safe='/#%[]@!$&\'()*+,;=')
+        return urllib.parse.quote(url_path, safe='/%23%25%5B%5D@!$&\'()*+,;=')
     else:
         return url_path
 
@@ -172,18 +172,19 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
         title = read_frontmatter_title(p)
         display = title if title else str(rel.with_suffix('')).replace(os.sep, '/')
 
-        # 优先使用 frontmatter 中的 dg-permalink（如果存在），否则回退到与页面同名的 .html
+        # 优先使用 frontmatter 中的 dg-permalink（如果存在），否则回退到与页面同名的路径（去掉后缀）
         fm = parse_frontmatter(p)
         permalink = ''
         if fm:
             permalink = fm.get('dg-permalink', '') or fm.get('dg_permalink', '') or ''
             permalink = permalink.strip() if isinstance(permalink, str) else ''
         if permalink:
-            # 确保没有前导斜杠，并以 .html 结尾以便指向已发布的页面
+            # 确保没有前导斜杠，但不强制追加 .html — 使用作者在 frontmatter 中指定的 permalink 原样
             permalink = permalink.lstrip('/')
-            href_path = permalink if permalink.endswith('.html') else permalink + '.html'
+            href_path = permalink
         else:
-            href_path = str(rel.with_suffix('.html')).replace(os.sep, '/')
+            # 不带扩展名的链接（例如 notes/爱情），更适合 GitHub Pages 或静态站点的路由
+            href_path = str(rel.with_suffix('')).replace(os.sep, '/')
 
         href = make_href(Path(href_path), cfg.get("encode_urls", True))
         try:
