@@ -7,19 +7,56 @@ on:
 
 permissions:
   contents: write
+  pages: read    # 如果要轮询 Pages 构建状态时可能需要
+  # 注意：不要把过多权限打开
 
 jobs:
   build:
+    # 防止 workflow 被自己触发的提交再次运行
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies (if any)
+        run: |
+          if [ -f requirements.txt ]; then
+            python -m pip install --upgrade pip
+            python -m pip install -r requirements.txt
+          fi
+
       - name: Generate Index
         run: |
           python generate_index.py
+
       - name: Commit and Push
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Auto-update index.html"
+          # 在提交消息中加入 skip ci，防止再次触发 workflow
+          commit_message: "Auto-update index.html [skip ci]"
           file_pattern: index.html
-      - name: Wait for Pages deployment
-        run: sleep 120   # 给 GitHub Pages 2分钟部署时间
+
+      - name: Wait for Pages deployment (poll)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 轮询 pages 最新构建状态（最多 5 分钟，每 10 秒一次）
+          for i in {1..30}; do
+            status=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages/builds/latest" | \
+              grep -o '"status":[^,]*' | sed 's/.*"status":"\([^"]*\)".*/\1/' || true)
+            echo "pages status: $status"
+            if [ "$status" = "built" ]; then
+              echo "Pages built"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timeout waiting for Pages build" >&2
+          exit 1
