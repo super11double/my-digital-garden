@@ -9,5 +9,63 @@
     <p><em>当前未找到公开的笔记（默认只显示 frontmatter: share: true 的笔记）。</em></p>
     <ul>
     </ul>
+
+    <script>
+    (function(){
+      // Helper: treat URLs with a scheme (http:, mailto:, etc.) as external and skip them
+      function isExternal(href){
+        return /^[a-z][a-z0-9+.-]*:/i.test(href);
+      }
+
+      // 1) Fix generated links that end with .md (e.g., notes/爱情.md -> notes/爱情)
+      function fixMdLinks(){
+        document.querySelectorAll('a[href]').forEach(function(a){
+          try{
+            var href = a.getAttribute('href');
+            if(!href || isExternal(href)) return;
+            // Only remove a trailing .md before end, fragment (#) or query (?);
+            var newHref = href.replace(/\.md(?=($|[#?]))/i, '');
+            if(newHref !== href) a.setAttribute('href', newHref);
+          }catch(e){ /* ignore */ }
+        });
+      }
+
+      // 2) Convert wiki-style [[名称]] in text nodes to links like /notes/名称
+      function linkifyWiki(root){
+        var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+        var nodes = [];
+        while(walker.nextNode()) nodes.push(walker.currentNode);
+
+        nodes.forEach(function(textNode){
+          // don't convert inside existing anchors or code/pre/textarea
+          if(textNode.parentNode && textNode.parentNode.closest && textNode.parentNode.closest('a, code, pre, textarea')) return;
+          var text = textNode.nodeValue;
+          if(!text || !/\[\[([^\]]+)\]\]/.test(text)) return;
+
+          var span = document.createElement('span');
+          var lastIndex = 0;
+          text.replace(/\[\[([^\]]+)\]\]/g, function(match, p1, offset){
+            if(offset > lastIndex){
+              span.appendChild(document.createTextNode(text.slice(lastIndex, offset)));
+            }
+            var name = p1.trim();
+            var a = document.createElement('a');
+            // Link to /notes/<name> without .md. Change this if you prefer a different base path (e.g., '/' ).
+            a.setAttribute('href', '/notes/' + encodeURIComponent(name));
+            a.textContent = name;
+            span.appendChild(a);
+            lastIndex = offset + match.length;
+          });
+          if(lastIndex < text.length) span.appendChild(document.createTextNode(text.slice(lastIndex)));
+          textNode.parentNode.replaceChild(span, textNode);
+        });
+      }
+
+      document.addEventListener('DOMContentLoaded', function(){
+        fixMdLinks();
+        linkifyWiki(document.body);
+      });
+    })();
+    </script>
 </body>
 </html>
