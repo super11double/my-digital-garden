@@ -21,3 +21,5 @@ jobs:
         with:
           commit_message: "Auto-update index.html"
           file_pattern: index.html
+      - name: Wait for Pages deployment
+        run: sleep 120   # 给 GitHub Pages 2分钟部署时间
