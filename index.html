@@ -92,7 +92,7 @@
       var listEl = document.getElementById('notes');
 
       // 首选：尝试 fetch 静态生成的 notes.json（构建脚本生成）
-      fetch('/notes.json', {cache: 'no-cache'}).then(function(res){
+      fetch('./notes.json', {cache: 'no-cache'}).then(function(res){
         if(!res.ok) throw new Error('no notes.json');
         return res.json();
       }).then(function(json){
