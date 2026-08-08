@@ -3,12 +3,20 @@ name: Update Index
 on:
   push:
     branches: [ "main" ]
+    # 避免自动提交的 index.html 再次触发 workflow（可选）
+    paths-ignore:
+      - 'index.html'
   workflow_dispatch:
 
+# 最小化权限
 permissions:
   contents: write
-  pages: read    # 如果要轮询 Pages 构建状态时可能需要
-  # 注意：不要把过多权限打开
+  pages: read
+
+# 防止并发冲突（同一分支只保留最后一次运行）
+concurrency:
+  group: update-index-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -17,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -32,10 +42,13 @@ jobs:
 
       - name: Generate Index
         run: |
+          # 确保脚本失败时返回非 0
           python generate_index.py
 
       - name: Commit and Push
         uses: stefanzweifel/git-auto-commit-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           # 在提交消息中加入 skip ci，防止再次触发 workflow
           commit_message: "Auto-update index.html [skip ci]"
@@ -44,19 +57,57 @@ jobs:
       - name: Wait for Pages deployment (poll)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          POLL_INTERVAL: 10        # seconds
+          TIMEOUT_MINUTES: 5       # total timeout
         run: |
-          # 轮询 pages 最新构建状态（最多 5 分钟，每 10 秒一次）
-          for i in {1..30}; do
-            status=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y jq || true
+
+          max_attempts=$(( (TIMEOUT_MINUTES * 60) / POLL_INTERVAL ))
+          if [ "$max_attempts" -le 0 ]; then
+            max_attempts=1
+          fi
+
+          for i in $(seq 1 $max_attempts); do
+            resp=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages/builds/latest" | \
-              grep -o '"status":[^,]*' | sed 's/.*"status":"\([^"]*\)".*/\1/' || true)
-            echo "pages status: $status"
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages/builds/latest" || true)
+
+            # 如果返回为空或包含 message "Not Found"，说明 Pages 可能未启用或还没创建构建
+            if [ -z "$resp" ]; then
+              echo "Empty response from Pages API (attempt $i/$max_attempts)"
+            fi
+
+            # 处理 404 / error 信息
+            message=$(echo "$resp" | jq -r '.message // empty')
+            if [ -n "$message" ]; then
+              echo "Pages API message: $message"
+              # 如果明确是 Not Found，尽早退出失败，提示配置问题
+              if echo "$message" | grep -qi "Not Found"; then
+                echo "Pages seems not configured for this repo or API returned 404." >&2
+                echo "$resp"
+                exit 1
+              fi
+            fi
+
+            status=$(echo "$resp" | jq -r '.status // empty')
+            echo "pages status: ${status:-<empty>} (attempt $i/$max_attempts)"
+
             if [ "$status" = "built" ]; then
               echo "Pages built"
               exit 0
             fi
-            sleep 10
+
+            # 若出现 errored/failed，尽早失败并打印响应用于排查
+            if [ "$status" = "errored" ] || [ "$status" = "failed" ]; then
+              echo "Pages build failed. Response:"
+              echo "$resp"
+              exit 1
+            fi
+
+            sleep $POLL_INTERVAL
           done
-          echo "Timeout waiting for Pages build" >&2
+
+          echo "Timeout waiting for Pages build after ${TIMEOUT_MINUTES} minutes" >&2
           exit 1
