@@ -1,71 +1,113 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8" />
-    <title>我的知识库</title>
+  <meta charset="utf-8" />
+  <title>我的知识库</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    /* 简单样式，按需修改 */
+    body{font-family:system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+    .note-list{list-style:none;padding:0;}
+    .note-item{margin:0.5rem 0;}
+    .note-excerpt{color:#555;font-size:0.95rem;}
+  </style>
 </head>
 <body>
-    <h1>我的知识库</h1>
-    <p><em>当前未找到公开的笔记（默认只显示 frontmatter: share: true 的笔记）。</em></p>
-    <ul>
-    </ul>
+  <h1>我的知识库</h1>
+  <p><em>默认只显示 frontmatter: share: true 的笔记。</em></p>
 
-    <script>
-    (function(){
-      // Helper: treat URLs with a scheme (http:, mailto:, etc.) as external and skip them
-      function isExternal(href){
-        return /^[a-z][a-z0-9+.-]*:/i.test(href);
-      }
+  <ul id="notes" class="note-list">
+    <li>正在加载笔记……</li>
+  </ul>
 
-      // 1) Fix generated links that end with .md (e.g., notes/爱情.md -> notes/爱情)
-      function fixMdLinks(){
-        document.querySelectorAll('a[href]').forEach(function(a){
-          try{
-            var href = a.getAttribute('href');
-            if(!href || isExternal(href)) return;
-            // Only remove a trailing .md before end, fragment (#) or query (?);
-            var newHref = href.replace(/\.md(?=($|[#?]))/i, '');
-            if(newHref !== href) a.setAttribute('href', newHref);
-          }catch(e){ /* ignore */ }
+  <script>
+  (function(){
+    function isExternal(href){
+      return /^[a-z][a-z0-9+.-]*:/i.test(href);
+    }
+    function fixMdLinks(root){
+      root = root || document;
+      root.querySelectorAll('a[href]').forEach(function(a){
+        try{
+          var href = a.getAttribute('href');
+          if(!href || isExternal(href)) return;
+          var newHref = href.replace(/\.md(?=($|[#?]))/i, '');
+          if(newHref !== href) a.setAttribute('href', newHref);
+        }catch(e){}
+      });
+    }
+    function linkifyWiki(root){
+      root = root || document.body;
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+      var nodes = [];
+      while(walker.nextNode()) nodes.push(walker.currentNode);
+      nodes.forEach(function(textNode){
+        if(textNode.parentNode && textNode.parentNode.closest && textNode.parentNode.closest('a, code, pre, textarea')) return;
+        var text = textNode.nodeValue;
+        if(!text || !/\[\[([^\]]+)\]\]/.test(text)) return;
+        var span = document.createElement('span');
+        var lastIndex = 0;
+        text.replace(/\[\[([^\]]+)\]\]/g, function(match, p1, offset){
+          if(offset > lastIndex) span.appendChild(document.createTextNode(text.slice(lastIndex, offset)));
+          var name = p1.trim();
+          var a = document.createElement('a');
+          a.setAttribute('href', '/notes/' + encodeURIComponent(name));
+          a.textContent = name;
+          span.appendChild(a);
+          lastIndex = offset + match.length;
         });
+        if(lastIndex < text.length) span.appendChild(document.createTextNode(text.slice(lastIndex)));
+        textNode.parentNode.replaceChild(span, textNode);
+      });
+    }
+
+    // 渲染 notes.json 到列表
+    function renderNotes(listEl, data){
+      listEl.innerHTML = '';
+      if(!data || !Array.isArray(data.items) || data.items.length === 0){
+        listEl.innerHTML = '<li>当前未找到公开的笔记（默认只显示 frontmatter: share: true 的笔记）。</li>';
+        return;
       }
+      data.items.forEach(function(it){
+        var li = document.createElement('li');
+        li.className = 'note-item';
+        var a = document.createElement('a');
+        a.href = it.url; // 已是 /notes/slug
+        a.textContent = it.title || it.slug;
+        li.appendChild(a);
+        if(it.excerpt){
+          var p = document.createElement('div');
+          p.className = 'note-excerpt';
+          p.textContent = it.excerpt;
+          li.appendChild(p);
+        }
+        listEl.appendChild(li);
+      });
+      // 修正可能的 .md 残留 与 wiki-link
+      fixMdLinks(listEl);
+      linkifyWiki(listEl);
+    }
 
-      // 2) Convert wiki-style [[名称]] in text nodes to links like /notes/名称
-      function linkifyWiki(root){
-        var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
-        var nodes = [];
-        while(walker.nextNode()) nodes.push(walker.currentNode);
+    document.addEventListener('DOMContentLoaded', function(){
+      var listEl = document.getElementById('notes');
 
-        nodes.forEach(function(textNode){
-          // don't convert inside existing anchors or code/pre/textarea
-          if(textNode.parentNode && textNode.parentNode.closest && textNode.parentNode.closest('a, code, pre, textarea')) return;
-          var text = textNode.nodeValue;
-          if(!text || !/\[\[([^\]]+)\]\]/.test(text)) return;
-
-          var span = document.createElement('span');
-          var lastIndex = 0;
-          text.replace(/\[\[([^\]]+)\]\]/g, function(match, p1, offset){
-            if(offset > lastIndex){
-              span.appendChild(document.createTextNode(text.slice(lastIndex, offset)));
-            }
-            var name = p1.trim();
-            var a = document.createElement('a');
-            // Link to /notes/<name> without .md. Change this if you prefer a different base path (e.g., '/' ).
-            a.setAttribute('href', '/notes/' + encodeURIComponent(name));
-            a.textContent = name;
-            span.appendChild(a);
-            lastIndex = offset + match.length;
-          });
-          if(lastIndex < text.length) span.appendChild(document.createTextNode(text.slice(lastIndex)));
-          textNode.parentNode.replaceChild(span, textNode);
-        });
-      }
-
-      document.addEventListener('DOMContentLoaded', function(){
+      // 首选：尝试 fetch 静态生成的 notes.json（构建脚本生成）
+      fetch('/notes.json', {cache: 'no-cache'}).then(function(res){
+        if(!res.ok) throw new Error('no notes.json');
+        return res.json();
+      }).then(function(json){
+        renderNotes(listEl, json);
+      }).catch(function(){
+        // 退路：如果没有 notes.json，尝试按页内现有 <a> 链接修正（之前提交的脚本）
+        // 或者把 notes 目录的页面硬编码在 HTML 中。
+        // 这里先尝试修复当前 DOM 内已存在的链接：
         fixMdLinks();
         linkifyWiki(document.body);
+        // 如果 UL 仍然为空，显示提示
+        if(!listEl.querySelector('li')) listEl.innerHTML = '<li>无法加载 notes.json，请运行生成脚本或检查部署设置。</li>';
       });
-    })();
-    </script>
+    });
+  })();
+  </script>
 </body>
 </html>
