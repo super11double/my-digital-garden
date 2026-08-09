@@ -1,27 +1,17 @@
 [
-  {
-    "title": "公开",
-    "path": "notes/公开",
-    "slug": "-%E5%85%AC%E5%BC%80"
-  },
-  {
-    "title": "love",
-    "path": "notes/love",
-    "slug": "love"
-  },
-  {
-    "title": "study",
-    "path": "notes/study",
-    "slug": "study"
-  },
-  {
-    "title": "头脑风暴",
-    "path": "notes/头脑风暴",
-    "slug": "-%E5%A4%B4%E8%84%91%E9%A3%8E%E6%9A%B4"
-  },
-  {
-    "title": "爱情",
-    "path": "notes/爱情",
-    "slug": "-%E7%88%B1%E6%83%85"
-  }
+    {
+        "title":  "index",
+        "path":  "index",
+        "slug":  "index"
+    },
+    {
+        "title":  "README",
+        "path":  "README",
+        "slug":  "README"
+    },
+    {
+        "title":  "random",
+        "path":  "src/site/random",
+        "slug":  "src%2Fsite%2Frandom"
+    }
 ]
