@@ -1,15 +1,5 @@
 [
   {
-    "title": "love",
-    "path": "notes/love",
-    "slug": "notes%2Flove"
-  },
-  {
-    "title": "study",
-    "path": "notes/study",
-    "slug": "notes%2Fstudy"
-  },
-  {
     "title": "公开",
     "path": "notes/公开",
     "slug": "notes%2F%E5%85%AC%E5%BC%80"
