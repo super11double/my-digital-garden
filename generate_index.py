@@ -358,7 +358,7 @@ content = """<!DOCTYPE html>
 </body>
 </html>
 """
-content = content.replace("{PAGE_TITLE}", page_title)
+    content = content.replace("{PAGE_TITLE}", page_title)
 
     # prepare JSON payload for frontend (modern format)
     # 包含基本字段：href, title (plain text), rel, mtime (秒，或 null)
