@@ -208,9 +208,13 @@ def convert_wiki_links_to_text(text: str) -> str:
 
 # --- Main ---
 def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
-    files, excluded_privacy = scan_markdown_files(root, cfg, include_private=args.include_private, verbose=args.verbose)
+    # Prefer scanning notes/ subfolder if present so index always reflects current notes/ content.
+    notes_dir = root / 'notes'
+    scan_root = notes_dir if notes_dir.exists() and notes_dir.is_dir() else root
+
+    files, excluded_privacy = scan_markdown_files(scan_root, cfg, include_private=args.include_private, verbose=args.verbose)
     if args.verbose:
-        print(f"Found {len(files)} public markdown files (excluded_by_privacy={excluded_privacy}) under {root}")
+        print(f"Found {len(files)} public markdown files (excluded_by_privacy={excluded_privacy}) under {scan_root}")
 
     out_path = root / cfg["output"]
     out_json_path = root / cfg.get("json_output", "notes.json")
@@ -218,7 +222,14 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     # build items (使用文件名为主，避免 frontmatter title 覆盖中文文件名)
     items = []
     for p in files:
-        rel = p.relative_to(root)
+        # make rel be relative to repo root so JSON paths include 'notes/...' when scanning notes/
+        try:
+            rel = p.relative_to(root)
+        except Exception:
+            # fallback to path relative to scan_root if needed
+            rel = p.relative_to(scan_root)
+            rel = Path('notes') / rel
+
         filename_only = p.stem
         fm = parse_frontmatter(p)
 
@@ -234,7 +245,11 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
             permalink = permalink.lstrip('/')
             href_path = permalink
         else:
-            href_path = str(rel.with_suffix('')).replace(os.sep, '/')
+            # ensure we remove suffix safely and avoid stray trailing dots
+            rel_no_ext = str(rel.with_suffix('')).replace(os.sep, '/')
+            if rel_no_ext.endswith('.'):
+                rel_no_ext = rel_no_ext[:-1]
+            href_path = rel_no_ext
 
         href = make_href(Path(href_path), cfg.get("encode_urls", True))
         try:
@@ -253,6 +268,8 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     # add rel-path keys (without extension), e.g., "notes/学习"
     for it in items:
         rel_no_ext = str(Path(it['rel']).with_suffix('')).replace(os.sep, '/')
+        if rel_no_ext.endswith('.'):
+            rel_no_ext = rel_no_ext[:-1]
         alias_map[rel_no_ext] = it['href']
         alias_map[rel_no_ext.lower()] = it['href']
 
@@ -377,6 +394,8 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     legacy_items = []
     for it in items:
         rel_no_ext = str(Path(it['rel']).with_suffix('')).replace(os.sep, '/')
+        if rel_no_ext.endswith('.'):
+            rel_no_ext = rel_no_ext[:-1]
         # slug: URL-encoded relative path (basename or full path depending on consumer)
         slug = urllib.parse.quote(rel_no_ext, safe='')
         legacy_items.append({
