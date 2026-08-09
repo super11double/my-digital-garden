@@ -40,6 +40,9 @@ DEFAULT_CONFIG = {
     "max_backups": 5,
     "cache_file": ".generate_index_cache.json",
     "public_only": True,   # 核心：默认只列出 share: true 的笔记
+    # 网站根路径（用于生成在 GitHub Pages 上可靠的绝对 href）
+    # 对于 project pages，通常是 '/{repo-name}/'，可通过环境变量或 CLI 修改
+    "site_base": "/my-digital-garden/",
 }
 
 # --- Helpers ---
@@ -122,12 +125,31 @@ def scan_markdown_files(root: Path, cfg: dict, include_private: bool, verbose=Fa
                 print(f"⚠️  无法访问 {p}, 跳过")
     return files, excluded_by_privacy
 
-def make_href(rel_path: Path, encode: bool) -> str:
+def make_href(rel_path: Path, encode: bool, base: str = '/') -> str:
+    """Construct an href prefixed by site base and optionally URL-encoded.
+    rel_path may be a path like 'notes/学习/' or 'notes/学习'.
+    base should be a repo-rooted prefix like '/my-digital-garden/' or '/'.
+    """
     url_path = str(rel_path).replace(os.sep, '/')
+    # strip any leading slash from url_path because we'll join with base
+    url_path = url_path.lstrip('/')
+    # normalize base
+    if not base:
+        base = '/'
+    if not base.startswith('/'):
+        base = '/' + base
+    if not base.endswith('/'):
+        base = base + '/'
+    # encode path preserving slashes when requested
     if encode:
-        return urllib.parse.quote(url_path, safe='/%23%25%5B%5D@!$&\'()*+,;=')
+        url_part = urllib.parse.quote(url_path, safe='/%23%25%5B%5D@!$&\'()*+,;=')
     else:
-        return url_path
+        url_part = url_path
+    # join base and url_part, avoid duplicate slashes
+    if base == '/':
+        return '/' + url_part
+    else:
+        return base.rstrip('/') + '/' + url_part
 
 def html_item_line(href: str, display: str, mtime: float = None) -> str:
     # display 可能包含 HTML（例如已转换的 [[Wiki]] 链接），如果包含 <a 则认为已安全构造，避免再次转义
@@ -252,7 +274,7 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
             # use a directory-style href (trailing slash) so GitHub Pages serves notes/<name>/index.html
             href_path = rel_no_ext.rstrip('.') + '/'
 
-        href = make_href(Path(href_path), cfg.get("encode_urls", True))
+        href = make_href(href_path, cfg.get("encode_urls", True), cfg.get("site_base", "/"))
         try:
             mtime = p.stat().st_mtime
         except Exception:
