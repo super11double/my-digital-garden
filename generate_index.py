@@ -280,24 +280,85 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
 
     html_intro = ""
     if not list_html:
-        html_intro = "<p><em>当前未找到公开的笔记（默认只显示 frontmatter: share: true 的笔记）。</em></p>"
+        html_intro = "<p id=\"no-notes\"><em>当前未找到公开的笔记（默认只显示 frontmatter: share: true 的笔记）。</em></p>"
 
+    # The generated HTML contains a server-side list as a fallback, but also includes
+    # client-side JS which will try to load a modern JSON (notes_modern.json) first and
+    # fall back to legacy notes.json if needed. This makes the frontend robust to both
+    # older workflows and the newer generator output.
     content = f"""<!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8" />
+    <meta charset=\"utf-8\" />
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
     <title>{html.escape(cfg.get('title','我的知识库'))}</title>
+    <style>
+      body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding: 1rem; }}
+      ul {{ line-height: 1.6; }}
+      small {{ color: #666; margin-left: .5rem; }}
+    </style>
 </head>
 <body>
     <h1>{html.escape(cfg.get('title','我的知识库'))}</h1>
     {html_intro}
-    <ul>
+    <ul id=\"notes-list\">
 {list_html}    </ul>
+
+<script>
+(function(){
+  // Try modern file first, then legacy notes.json. Render into #notes-list.
+  const listEl = document.getElementById('notes-list');
+  const noNotesEl = document.getElementById('no-notes');
+
+  function render(items){
+    listEl.innerHTML = '';
+    if(!items || items.length === 0){
+      if(noNotesEl) noNotesEl.style.display = '';
+      return;
+    }
+    if(noNotesEl) noNotesEl.style.display = 'none';
+    items.forEach(it => {
+      let href = '#';
+      let title = '';
+      if(it.href){ href = it.href; }
+      else if(it.path){ href = it.path; }
+      else if(it.slug){ try{ href = decodeURIComponent(it.slug); }catch(e){ href = it.slug } }
+      title = it.title || it.name || it["rel"] || it["path"] || it["href"] || '';
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = href;
+      a.textContent = title;
+      li.appendChild(a);
+      if(it.mtime){
+        const s = document.createElement('small');
+        const d = new Date(it.mtime * 1000);
+        s.textContent = `(${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')})`;
+        li.appendChild(document.createTextNode(' '));
+        li.appendChild(s);
+      }
+      listEl.appendChild(li);
+    });
+  }
+
+  function fetchJson(url){
+    return fetch(url, {cache: 'no-store'}).then(r => { if(!r.ok) throw new Error('not ok'); return r.json(); });
+  }
+
+  // Attempt modern file
+  fetchJson('notes_modern.json').then(render).catch(()=>{
+    // fallback to legacy notes.json
+    fetchJson('notes.json').then(render).catch(()=>{
+      // leave server-side content as-is (or empty message)
+    });
+  });
+})();
+</script>
+
 </body>
 </html>
 """
 
-    # prepare JSON payload for frontend
+    # prepare JSON payload for frontend (modern format)
     # 包含基本字段：href, title (plain text), rel, mtime (秒，或 null)
     json_items = []
     for it in items:
@@ -308,6 +369,20 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
             "mtime": int(it["mtime"]) if it["mtime"] is not None else None
         })
     json_content = json.dumps(json_items, ensure_ascii=False, indent=2)
+
+    # For backwards compatibility, also produce a legacy-style notes.json array
+    # Legacy schema expected by older frontends: { title, path, slug }
+    legacy_items = []
+    for it in items:
+        rel_no_ext = str(Path(it['rel']).with_suffix('')).replace(os.sep, '/')
+        # slug: URL-encoded relative path (basename or full path depending on consumer)
+        slug = urllib.parse.quote(rel_no_ext, safe='')
+        legacy_items.append({
+            "title": it.get("display_plain", it.get("display_text", "")),
+            "path": rel_no_ext,
+            "slug": slug
+        })
+    legacy_content = json.dumps(legacy_items, ensure_ascii=False, indent=2)
 
     if args.dry_run:
         print("=== DRY RUN ===")
@@ -348,15 +423,34 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
             if args.verbose:
                 print("⚠️  JSON 备份失败：", e)
 
-    # write notes.json
+    # write legacy-format notes.json (for older frontends)
     try:
-        atomic_write(out_json_path, json_content)
+        atomic_write(out_json_path, legacy_content)
     except Exception as e:
-        print("❌ 写入 notes.json 失败：", e)
+        print("❌ 写入 notes.json 失败（legacy）：", e)
         return 2
 
+    # also write a modern JSON file with richer fields (notes_modern.json)
+    modern_json_path = root / (cfg.get('json_output', 'notes.json').rsplit('.', 1)[0] + '_modern.json')
+    try:
+        # backup modern file if exists
+        if modern_json_path.exists() and cfg.get("backup", True):
+            ts = time.strftime('%Y%m%d-%H%M%S')
+            bakm = modern_json_path.with_name(modern_json_path.name + ".bak-" + ts)
+            try:
+                shutil.copy2(modern_json_path, bakm)
+                if args.verbose:
+                    print(f"🔁  备份旧的 {modern_json_path} -> {bakm}")
+                rotate_backups(modern_json_path, cfg.get("max_backups", 5), verbose=args.verbose)
+            except Exception:
+                pass
+        atomic_write(modern_json_path, json_content)
+    except Exception as e:
+        if args.verbose:
+            print("⚠️ 写入 notes_modern.json 失败：", e)
+
     print(f"✅ 已生成 {out_path}，列出 {len(items)} 个公开笔记（排除 {excluded_privacy} 个私密笔记）。")
-    print(f"✅ 已生成 {out_json_path}（供前端读取）。")
+    print(f"✅ 已生成 {out_json_path}（legacy 格式，用于旧前端），并尝试写入 {modern_json_path}（modern 格式）。")
     return 0
 
 
