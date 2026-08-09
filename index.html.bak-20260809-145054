@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>我的知识库</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding: 1rem; }
+      ul { line-height: 1.6; }
+      small { color: #666; margin-left: .5rem; }
+    </style>
+</head>
+<body>
+    <h1>我的知识库</h1>
+    <p id="no-notes"><em>当前未找到公开的笔记（默认只显示 frontmatter: share: true 的笔记）。</em></p>
+    <ul id="notes-list">
+    </ul>
+
+<script>
+(function(){
+  const listEl = document.getElementById('notes-list');
+  const noNotesEl = document.getElementById('no-notes');
+
+  function render(items){
+    listEl.innerHTML = '';
+    if(!items || items.length === 0){
+      if(noNotesEl) noNotesEl.style.display = '';
+      return;
+    }
+    if(noNotesEl) noNotesEl.style.display = 'none';
+    items.forEach(it => {
+      let href = '#';
+      let title = '';
+      if(it.href){ href = it.href; }
+      else if(it.path){ href = it.path; }
+      else if(it.slug){ try{ href = decodeURIComponent(it.slug); }catch(e){ href = it.slug } }
+      title = it.title || it.name || it["rel"] || it["path"] || it["href"] || '';
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = href;
+      a.textContent = title;
+      li.appendChild(a);
+      if(it.mtime){
+        const s = document.createElement('small');
+        const d = new Date(it.mtime * 1000);
+        s.textContent = `(${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')})`;
+        li.appendChild(document.createTextNode(' '));
+        li.appendChild(s);
+      }
+      listEl.appendChild(li);
+    });
+  }
+
+  function fetchJson(url){
+    return fetch(url, {cache: 'no-store'}).then(r => { if(!r.ok) throw new Error('not ok'); return r.json(); });
+  }
+
+  fetchJson('notes_modern.json').then(render).catch(()=>{
+    fetchJson('notes.json').then(render).catch(()=>{
+      // leave server-side content as-is
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

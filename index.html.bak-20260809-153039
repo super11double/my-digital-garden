@@ -14,7 +14,9 @@
         <h1>我的知识库</h1>
         
         <ul id="notes-list">
-            <li><a href="notes/%E5%85%AC%E5%BC%80">公开</a> <small>(2026-08-09 14:29)</small></li>
+            <li><a href="notes/love">love</a> <small>(2026-08-09 14:29)</small></li>
+        <li><a href="notes/study">study</a> <small>(2026-08-09 14:29)</small></li>
+        <li><a href="notes/%E5%85%AC%E5%BC%80">公开</a> <small>(2026-08-09 14:29)</small></li>
         <li><a href="notes/%E5%A4%B4%E8%84%91%E9%A3%8E%E6%9A%B4">头脑风暴</a> <small>(2026-08-09 14:29)</small></li>
         <li><a href="notes/%E7%88%B1%E6%83%85">爱情</a> <small>(2026-08-09 14:29)</small></li>
     </ul>
