@@ -7,6 +7,7 @@ generate_index.py — 紧急隐私修正版：仅列出 frontmatter 中 share: t
 - 支持 --include-private 覆盖（管理员模式）
 - 保留先前的健壮特性：原子写入、备份轮换、frontmatter title、URL 编码开关、dry-run、verbose 等
 - 优先使用 frontmatter 中的 `dg-permalink` 作为对外链接（如果存在），并将索引指向已发布页面的友好路径（不强制 .html）
+- 生成与 index.html 对应的 notes.json，以便前端 JS 读取笔记列表
 """
 from pathlib import Path
 import argparse
@@ -28,6 +29,7 @@ DEFAULT_CONFIG = {
     "extensions": [".md"],
     "encode_urls": True,
     "output": "index.html",
+    "json_output": "notes.json",   # 新增：生成的 JSON 文件名
     "title": "我的知识库",
     "backup": True,
     "max_backups": 5,
@@ -164,6 +166,7 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
         print(f"🔎 Found {len(files)} public markdown files (excluded_by_privacy={excluded_privacy}) under {root}")
 
     out_path = root / cfg["output"]
+    out_json_path = root / cfg.get("json_output", "notes.json")
 
     # build items (prefer frontmatter title)
     items = []
@@ -221,13 +224,26 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
 </html>
 """
 
+    # prepare JSON payload for frontend
+    # 包含基本字段：href, title (display), rel, mtime (秒，或 null)
+    json_items = []
+    for it in items:
+        json_items.append({
+            "href": it["href"],
+            "title": it["display"],
+            "rel": it["rel"],
+            "mtime": int(it["mtime"]) if it["mtime"] is not None else None
+        })
+    json_content = json.dumps(json_items, ensure_ascii=False, indent=2)
+
     if args.dry_run:
         print("=== DRY RUN ===")
         print(f"Will write: {out_path} ({len(items)} items listed).")
+        print(f"Will write JSON: {out_json_path} ({len(json_items)} items).")
         print(f"Excluded by privacy rule: {excluded_privacy} files.")
         return 0
 
-    # backup
+    # backup index.html
     if out_path.exists() and cfg.get("backup", True):
         ts = time.strftime('%Y%m%d-%H%M%S')
         bak = out_path.with_name(out_path.name + ".bak-" + ts)
@@ -239,14 +255,35 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
         except Exception as e:
             print("⚠️  备份失败：", e)
 
-    # write
+    # write index.html
     try:
         atomic_write(out_path, content)
     except Exception as e:
         print("❌ 写入失败：", e)
         return 2
 
+    # backup notes.json
+    if out_json_path.exists() and cfg.get("backup", True):
+        ts = time.strftime('%Y%m%d-%H%M%S')
+        bakj = out_json_path.with_name(out_json_path.name + ".bak-" + ts)
+        try:
+            shutil.copy2(out_json_path, bakj)
+            if args.verbose:
+                print(f"🔁  备份旧的 {out_json_path} -> {bakj}")
+            rotate_backups(out_json_path, cfg.get("max_backups", 5), verbose=args.verbose)
+        except Exception as e:
+            if args.verbose:
+                print("⚠️  JSON 备份失败：", e)
+
+    # write notes.json
+    try:
+        atomic_write(out_json_path, json_content)
+    except Exception as e:
+        print("❌ 写入 notes.json 失败：", e)
+        return 2
+
     print(f"✅ 已生成 {out_path}，列出 {len(items)} 个公开笔记（排除 {excluded_privacy} 个私密笔记）。")
+    print(f"✅ 已生成 {out_json_path}（供前端读取）。")
     return 0
 
 def parse_args(argv):
@@ -263,7 +300,7 @@ def main(argv):
     args = parse_args(argv)
     root = Path(args.root).resolve()
 
-    # load defaults (simple)
+    # load defaults (简单)
     cfg = dict(DEFAULT_CONFIG)
     if args.no_encode:
         cfg["encode_urls"] = False
