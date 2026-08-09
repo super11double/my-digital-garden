@@ -3,11 +3,81 @@
 <head>
     <meta charset="utf-8" />
     <title>我的知识库</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding: 20px; }
+      ul { padding-left: 1.2em; }
+      li { margin: 0.4em 0; }
+      a { color: #0366d6; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .muted { color: #666; font-style: italic; }
+    </style>
 </head>
 <body>
     <h1>我的知识库</h1>
-    <p><em>当前未找到公开的笔记（默认只显示 frontmatter: share: true 的笔记）。</em></p>
-    <ul>
-    </ul>
+    <p id="no-notes" class="muted">当前未找到公开的笔记（默认只显示 frontmatter: share: true 的笔记）。</p>
+    <ul id="notes-list" aria-live="polite"></ul>
+
+    <script>
+      // 在页面加载后尝试读取 notes.json 并渲染到 <ul id="notes-list">
+      document.addEventListener('DOMContentLoaded', async function () {
+        const placeholder = document.getElementById('no-notes');
+        const list = document.getElementById('notes-list');
+
+        try {
+          const res = await fetch('notes.json', { cache: 'no-cache' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+
+          const data = await res.json();
+
+          // notes.json 可能直接是数组，也可能是 { notes: [...] } 或 { items: [...] }
+          let notes = [];
+          if (Array.isArray(data)) notes = data;
+          else if (Array.isArray(data.notes)) notes = data.notes;
+          else if (Array.isArray(data.items)) notes = data.items;
+          else {
+            // 尝试在对象里找到第一个数组字段作为备用
+            for (const key in data) {
+              if (Array.isArray(data[key])) { notes = data[key]; break; }
+            }
+          }
+
+          // 如果没有数据，保留占位提示
+          if (!notes || notes.length === 0) {
+            placeholder.style.display = '';
+            return;
+          }
+
+          // 有数据则隐藏占位文本，并渲染列表
+          placeholder.style.display = 'none';
+          list.innerHTML = ''; // 保险清空
+
+          notes.forEach(note => {
+            // 尝试从字段中拿到标题与链接（兼容不同格式）
+            const title = note.title || note.name || note.slug || 'Untitled';
+            // 优先使用 path（用户提到有 path 字段），其次尝试 slug 或 url
+            let href = '#';
+            if (note.path) href = note.path;
+            else if (note.url) href = note.url;
+            else if (note.slug) {
+              // 如果 slug 是相对路径或需要拼接，请按实际情况修改这里的规则
+              href = note.slug.endsWith('.html') ? note.slug : (note.slug + '.html');
+            }
+
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.textContent = title;
+            a.href = href;
+            a.setAttribute('rel', 'noopener noreferrer');
+            li.appendChild(a);
+            list.appendChild(li);
+          });
+        } catch (err) {
+          console.error('加载 notes.json 出错：', err);
+          placeholder.textContent = '加载笔记时出错：' + (err && err.message ? err.message : String(err));
+          placeholder.style.display = '';
+        }
+      });
+    </script>
 </body>
 </html>
