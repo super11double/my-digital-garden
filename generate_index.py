@@ -8,6 +8,10 @@ generate_index.py — 紧急隐私修正版：仅列出 frontmatter 中 share: t
 - 保留先前的健壮特性：原子写入、备份轮换、frontmatter title、URL 编码开关、dry-run、verbose 等
 - 优先使用 frontmatter 中的 `dg-permalink` 作为对外链接（如果存在），并将索引指向已发布页面的友好路径（不强制 .html）
 - 生成与 index.html 对应的 notes.json，以便前端 JS 读取笔记列表
+
+新增：
+- 列表显示以文件名（不含 .md 后缀）为准（默认），避免 frontmatter title 覆盖导致意外显示英文或不期望的文本。
+- 自动把 Wiki 链接形式 [[目标]] 转成对应笔记的网页链接（如果能解析到目标笔记），让内部引用可点击。
 """
 from pathlib import Path
 import argparse
@@ -125,7 +129,11 @@ def make_href(rel_path: Path, encode: bool) -> str:
         return url_path
 
 def html_item_line(href: str, display: str, mtime: float = None) -> str:
-    disp = html.escape(display)
+    # display 可能包含 HTML（例如已转换的 [[Wiki]] 链接），如果包含 <a 则认为已安全构造，避免再次转义
+    if '<a ' in display or display.strip().startswith('<a'):
+        disp = display
+    else:
+        disp = html.escape(display)
     if mtime:
         t = time.strftime('%Y-%m-%d %H:%M', time.localtime(mtime))
         return f'        <li><a href="{href}">{disp}</a> <small>({t})</small></li>'
@@ -159,6 +167,44 @@ def rotate_backups(path: Path, max_backups: int, verbose=False):
         except Exception:
             pass
 
+# --- Wiki link helpers ---
+WIKI_RE = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
+
+def convert_wiki_links_in_text(text: str, alias_map: dict) -> str:
+    """
+    将文本中的 [[Page]] 或 [[Page|Label]] 转成 HTML 链接（如果能解析到 alias_map）。
+    alias_map: {alias: href}
+    返回替换后的 HTML 片段
+    """
+    if not text:
+        return text
+
+    def repl(m):
+        target = m.group(1).strip()
+        label = m.group(2).strip() if m.group(2) else None
+        key = target
+        href = alias_map.get(key)
+        if href is None:
+            href = alias_map.get(key.lower())
+        if href is None:
+            return html.escape(m.group(0))
+        display = label if label else target
+        return f'<a href="{html.escape(href)}">{html.escape(display)}</a>'
+
+    return WIKI_RE.sub(repl, text)
+
+def convert_wiki_links_to_text(text: str) -> str:
+    """
+    将 [[Page|Label]] 或 [[Page]] 转成纯文本（用于 JSON title 字段）
+    """
+    if not text:
+        return text
+    def repl(m):
+        target = m.group(1).strip()
+        label = m.group(2).strip() if m.group(2) else None
+        return label if label else target
+    return WIKI_RE.sub(repl, text)
+
 # --- Main ---
 def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     files, excluded_privacy = scan_markdown_files(root, cfg, include_private=args.include_private, verbose=args.verbose)
@@ -168,25 +214,25 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     out_path = root / cfg["output"]
     out_json_path = root / cfg.get("json_output", "notes.json")
 
-    # build items (prefer frontmatter title)
+    # build items (使用文件名为主，避免 frontmatter title 覆盖中文文件名)
     items = []
     for p in files:
         rel = p.relative_to(root)
-        title = read_frontmatter_title(p)
-        display = title if title else str(rel.with_suffix('')).replace(os.sep, '/')
+        filename_only = p.stem
+        fm = parse_frontmatter(p)
+
+        # 决定显示文本：使用文件名（不带后缀）。不再优先使用 frontmatter title。
+        display_text = unicodedata.normalize('NFC', filename_only)
 
         # 优先使用 frontmatter 中的 dg-permalink（如果存在），否则回退到与页面同名的路径（去掉后缀）
-        fm = parse_frontmatter(p)
         permalink = ''
         if fm:
             permalink = fm.get('dg-permalink', '') or fm.get('dg_permalink', '') or ''
             permalink = permalink.strip() if isinstance(permalink, str) else ''
         if permalink:
-            # 确保没有前导斜杠，但不强制追加 .html — 使用作者在 frontmatter 中指定的 permalink 原样
             permalink = permalink.lstrip('/')
             href_path = permalink
         else:
-            # 不带扩展名的链接（例如 notes/爱情），更适合 GitHub Pages 或静态站点的路由
             href_path = str(rel.with_suffix('')).replace(os.sep, '/')
 
         href = make_href(Path(href_path), cfg.get("encode_urls", True))
@@ -194,7 +240,18 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
             mtime = p.stat().st_mtime
         except Exception:
             mtime = None
-        items.append({"path": p, "rel": str(rel), "display": display, "href": href, "mtime": mtime})
+        items.append({"path": p, "rel": str(rel), "display_text": display_text, "href": href, "mtime": mtime, "basename": filename_only})
+
+    # build alias map for wiki links: basename -> href
+    alias_map = {}
+    for it in items:
+        alias_map[it['basename']] = it['href']
+        alias_map[it['basename'].lower()] = it['href']
+
+    # convert wiki links in display (HTML) and also produce plain text title for JSON
+    for it in items:
+        it['display_html'] = convert_wiki_links_in_text(it['display_text'], alias_map)
+        it['display_plain'] = convert_wiki_links_to_text(it['display_text'])
 
     # sort by path
     items.sort(key=lambda x: x["rel"].casefold())
@@ -202,7 +259,8 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     # build HTML
     lines = []
     for it in items:
-        lines.append(html_item_line(it["href"], it["display"], mtime=it["mtime"]))
+        # use display_html inside list; html_item_line will avoid double-escaping if it contains <a
+        lines.append(html_item_line(it["href"], it.get("display_html", it.get("display_text", "")), mtime=it["mtime"]))
     list_html = "\n".join(lines) + ("\n" if lines else "")
 
     html_intro = ""
@@ -225,12 +283,12 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
 """
 
     # prepare JSON payload for frontend
-    # 包含基本字段：href, title (display), rel, mtime (秒，或 null)
+    # 包含基本字段：href, title (plain text), rel, mtime (秒，或 null)
     json_items = []
     for it in items:
         json_items.append({
             "href": it["href"],
-            "title": it["display"],
+            "title": it.get("display_plain", it.get("display_text", "")),
             "rel": it["rel"],
             "mtime": int(it["mtime"]) if it["mtime"] is not None else None
         })
