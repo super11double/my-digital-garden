@@ -249,7 +249,8 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
             rel_no_ext = str(rel.with_suffix('')).replace(os.sep, '/')
             if rel_no_ext.endswith('.'):
                 rel_no_ext = rel_no_ext[:-1]
-            href_path = rel_no_ext
+            # use a directory-style href (trailing slash) so GitHub Pages serves notes/<name>/index.html
+            href_path = rel_no_ext.rstrip('.') + '/'
 
         href = make_href(Path(href_path), cfg.get("encode_urls", True))
         try:
