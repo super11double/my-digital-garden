@@ -12,6 +12,7 @@ generate_index.py — 紧急隐私修正版：仅列出 frontmatter 中 share: t
 新增：
 - 列表显示以文件名（不含 .md 后缀）为准（默认），避免 frontmatter title 覆盖导致意外显示英文或不期望的文本。
 - 自动把 Wiki 链接形式 [[目标]] 转成对应笔记的网页链接（如果能解析到目标笔记），让内部引用可点击。
+- 避免同名冲突：别名映射优先使用相对路径（不含扩展名），仅在文件名唯一时才把 basename 作为别名。
 """
 from pathlib import Path
 import argparse
@@ -242,11 +243,25 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
             mtime = None
         items.append({"path": p, "rel": str(rel), "display_text": display_text, "href": href, "mtime": mtime, "basename": filename_only})
 
-    # build alias map for wiki links: basename -> href
+    # build alias map for wiki links: prefer relative-path keys to avoid collisions
     alias_map = {}
+    # count basenames so we only add basename when unique
+    basename_counts = {}
     for it in items:
-        alias_map[it['basename']] = it['href']
-        alias_map[it['basename'].lower()] = it['href']
+        basename_counts[it['basename']] = basename_counts.get(it['basename'], 0) + 1
+
+    # add rel-path keys (without extension), e.g., "notes/学习"
+    for it in items:
+        rel_no_ext = str(Path(it['rel']).with_suffix('')).replace(os.sep, '/')
+        alias_map[rel_no_ext] = it['href']
+        alias_map[rel_no_ext.lower()] = it['href']
+
+    # add basename keys only when unique
+    for it in items:
+        b = it['basename']
+        if basename_counts.get(b, 0) == 1:
+            alias_map[b] = it['href']
+            alias_map[b.lower()] = it['href']
 
     # convert wiki links in display (HTML) and also produce plain text title for JSON
     for it in items:
@@ -343,6 +358,7 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     print(f"✅ 已生成 {out_path}，列出 {len(items)} 个公开笔记（排除 {excluded_privacy} 个私密笔记）。")
     print(f"✅ 已生成 {out_json_path}（供前端读取）。")
     return 0
+
 
 def parse_args(argv):
     p = argparse.ArgumentParser(description="Generate index.html from markdown files (public-only by default).")
