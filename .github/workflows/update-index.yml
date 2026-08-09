@@ -54,7 +54,7 @@ jobs:
           # 在提交消息中加入 skip ci，防止再次触发 workflow
           commit_message: "Auto-update index.html and notes JSON [skip ci]"
           # include index.html and generated JSON files so Pages and consumers see consistent data
-          file_pattern: "index.html, notes.json, notes_modern.json"
+          file_pattern: "index.html notes.json notes_modern.json"
 
       - name: Wait for Pages deployment (poll)
         env:
