@@ -368,14 +368,14 @@ NOTE_PAGE_TEMPLATE = """<!doctype html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>{TITLE}</title>
-<style>body{{font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding:1rem;}}
-a {{ color:#0366d6; text-decoration:none; }}
-a:hover {{ text-decoration:underline; }}
-code {{ background:#f6f8fa; padding:.1em .3em; border-radius:3px; }}
-pre {{ background:#f6f8fa; padding:.5rem; overflow:auto; }}
-pre code {{ padding:0; }}
-blockquote {{ border-left:3px solid #ddd; margin-left:0; padding-left:1rem; color:#555; }}
-li {{ margin:.2rem 0; }}
+<style>body{font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding:1rem;}
+a { color:#0366d6; text-decoration:none; }
+a:hover { text-decoration:underline; }
+code { background:#f6f8fa; padding:.1em .3em; border-radius:3px; }
+pre { background:#f6f8fa; padding:.5rem; overflow:auto; }
+pre code { padding:0; }
+blockquote { border-left:3px solid #ddd; margin-left:0; padding-left:1rem; color:#555; }
+li { margin:.2rem 0; }
 </style>
 </head>
 <body>
