@@ -40,6 +40,10 @@ DEFAULT_CONFIG = {
     "max_backups": 5,
     "cache_file": ".generate_index_cache.json",
     "public_only": True,   # 核心：默认只列出 share: true 的笔记
+    # 网站根路径（用于生成在 GitHub Pages 上可靠的链接）
+    # 可设为绝对 URL（推荐，兼容性最好），例如 'https://USERNAME.github.io/REPO/'
+    # 或相对根路径 '/my-digital-garden/'。可通过环境变量或 CLI 修改。
+    "site_base": "https://super11double.github.io/my-digital-garden/",
 }
 
 # --- Helpers ---
@@ -122,12 +126,41 @@ def scan_markdown_files(root: Path, cfg: dict, include_private: bool, verbose=Fa
                 print(f"⚠️  无法访问 {p}, 跳过")
     return files, excluded_by_privacy
 
-def make_href(rel_path: Path, encode: bool) -> str:
+def make_href(rel_path: Path, encode: bool, base: str = '/') -> str:
+    """Construct an href prefixed by site base and optionally URL-encoded.
+    rel_path may be a path like 'notes/学习/' or 'notes/学习'.
+    base should be a repo-rooted prefix like '/my-digital-garden/' or '/'.
+    """
     url_path = str(rel_path).replace(os.sep, '/')
-    if encode:
-        return urllib.parse.quote(url_path, safe='/%23%25%5B%5D@!$&\'()*+,;=')
+    # strip any leading slash from url_path because we'll join with base
+    url_path = url_path.lstrip('/')
+    # normalize base
+    if not base:
+        base = '/'
+    # If base looks like an absolute URL (http/https), keep as-is; otherwise normalize as a root-relative path
+    if base.startswith('http://') or base.startswith('https://'):
+        abs_base = base
+        if not abs_base.endswith('/'):
+            abs_base = abs_base + '/'
+        if encode:
+            url_part = urllib.parse.quote(url_path, safe='/%23%25%5B%5D@!$&\'()*+,;=')
+        else:
+            url_part = url_path
+        return abs_base.rstrip('/') + '/' + url_part
     else:
-        return url_path
+        # treat as root-relative
+        if not base.startswith('/'):
+            base = '/' + base
+        if not base.endswith('/'):
+            base = base + '/'
+        if encode:
+            url_part = urllib.parse.quote(url_path, safe='/%23%25%5B%5D@!$&\'()*+,;=')
+        else:
+            url_part = url_path
+        if base == '/':
+            return '/' + url_part
+        else:
+            return base.rstrip('/') + '/' + url_part
 
 def html_item_line(href: str, display: str, mtime: float = None) -> str:
     # display 可能包含 HTML（例如已转换的 [[Wiki]] 链接），如果包含 <a 则认为已安全构造，避免再次转义
@@ -137,9 +170,9 @@ def html_item_line(href: str, display: str, mtime: float = None) -> str:
         disp = html.escape(display)
     if mtime:
         t = time.strftime('%Y-%m-%d %H:%M', time.localtime(mtime))
-        return f'        <li><a href="{href}">{disp}</a> <small>({t})</small></li>'
+        return f'        <li><a href="{href}" target="_top">{disp}</a> <small>({t})</small></li>'
     else:
-        return f'        <li><a href="{href}">{disp}</a></li>'
+        return f'        <li><a href="{href}" target="_top">{disp}</a></li>'
 
 def atomic_write(path: Path, content: str):
     dir = path.parent
@@ -249,9 +282,10 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
             rel_no_ext = str(rel.with_suffix('')).replace(os.sep, '/')
             if rel_no_ext.endswith('.'):
                 rel_no_ext = rel_no_ext[:-1]
-            href_path = rel_no_ext
+            # use a directory-style href (trailing slash) so GitHub Pages serves notes/<name>/index.html
+            href_path = rel_no_ext.rstrip('.') + '/'
 
-        href = make_href(Path(href_path), cfg.get("encode_urls", True))
+        href = make_href(href_path, cfg.get("encode_urls", True), cfg.get("site_base", "/"))
         try:
             mtime = p.stat().st_mtime
         except Exception:
@@ -345,6 +379,7 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
           const li = document.createElement('li');
           const a = document.createElement('a');
           a.href = href;
+          a.target = '_top';
           a.textContent = title;
           li.appendChild(a);
           if(it.mtime){
