@@ -170,9 +170,9 @@ def html_item_line(href: str, display: str, mtime: float = None) -> str:
         disp = html.escape(display)
     if mtime:
         t = time.strftime('%Y-%m-%d %H:%M', time.localtime(mtime))
-        return f'        <li><a href="{href}">{disp}</a> <small>({t})</small></li>'
+        return f'        <li><a href="{href}" target="_top">{disp}</a> <small>({t})</small></li>'
     else:
-        return f'        <li><a href="{href}">{disp}</a></li>'
+        return f'        <li><a href="{href}" target="_top">{disp}</a></li>'
 
 def atomic_write(path: Path, content: str):
     dir = path.parent
@@ -379,6 +379,7 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
           const li = document.createElement('li');
           const a = document.createElement('a');
           a.href = href;
+          a.target = '_top';
           a.textContent = title;
           li.appendChild(a);
           if(it.mtime){
