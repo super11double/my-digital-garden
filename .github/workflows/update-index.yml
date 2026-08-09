@@ -48,18 +48,7 @@ jobs:
 
       - name: Strip UTF-8 BOM from generated files
         run: |
-          python - <<'PY'
-import pathlib
-files = ['index.html','notes.json','notes_modern.json']
-for f in files:
-    p = pathlib.Path(f)
-    if not p.exists():
-        continue
-    b = p.read_bytes()
-    if b.startswith(b'\xef\xbb\xbf'):
-        p.write_bytes(b[3:])
-        print('Stripped BOM from', f)
-PY
+          python .github/scripts/strip_bom.py
 
       - name: Commit and Push
         uses: stefanzweifel/git-auto-commit-action@v5
