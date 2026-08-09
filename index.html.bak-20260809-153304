@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>我的知识库</title>
+        <style>
+          body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding: 1rem; }}
+          ul {{ line-height: 1.6; }}
+          small {{ color: #666; margin-left: .5rem; }}
+        </style>
+    </head>
+    <body>
+        <h1>我的知识库</h1>
+        
+        <ul id="notes-list">
+            <li><a href="notes/%E5%85%AC%E5%BC%80">公开</a> <small>(2026-08-09 14:29)</small></li>
+        <li><a href="notes/%E5%A4%B4%E8%84%91%E9%A3%8E%E6%9A%B4">头脑风暴</a> <small>(2026-08-09 14:29)</small></li>
+        <li><a href="notes/%E7%88%B1%E6%83%85">爱情</a> <small>(2026-08-09 14:29)</small></li>
+    </ul>
+        
+    <script>
+    (function(){
+      // Try modern file first, then legacy notes.json. Render into #notes-list.
+      const listEl = document.getElementById('notes-list');
+      const noNotesEl = document.getElementById('no-notes');
+        
+      function render(items){
+        listEl.innerHTML = '';
+        if(!items || items.length === 0){
+          if(noNotesEl) noNotesEl.style.display = '';
+          return;
+        }
+        if(noNotesEl) noNotesEl.style.display = 'none';
+        items.forEach(it => {
+          let href = '#';
+          let title = '';
+          if(it.href){ href = it.href; }
+          else if(it.path){ href = it.path; }
+          else if(it.slug){ try{ href = decodeURIComponent(it.slug); }catch(e){ href = it.slug } }
+          title = it.title || it.name || it["rel"] || it["path"] || it["href"] || '';
+          const li = document.createElement('li');
+          const a = document.createElement('a');
+          a.href = href;
+          a.textContent = title;
+          li.appendChild(a);
+          if(it.mtime){
+            const s = document.createElement('small');
+            const d = new Date(it.mtime * 1000);
+            s.textContent = `(${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')})`;
+            li.appendChild(document.createTextNode(' '));
+            li.appendChild(s);
+          }
+          listEl.appendChild(li);
+        });
+      }
+        
+      function fetchJson(url){
+        return fetch(url, {cache: 'no-store'}).then(r => { if(!r.ok) throw new Error('not ok'); return r.json(); });
+      }
+        
+      // Attempt modern file
+      fetchJson('notes_modern.json').then(render).catch(()=>{
+        // fallback to legacy notes.json
+        fetchJson('notes.json').then(render).catch(()=>{
+          // leave server-side content as-is (or empty message)
+        });
+      });
+    })();
+    </script>
+        
+    </body>
+    </html>
+    
