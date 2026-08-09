@@ -13,6 +13,8 @@ generate_index.py — 紧急隐私修正版：仅列出 frontmatter 中 share: t
 - 列表显示以文件名（不含 .md 后缀）为准（默认），避免 frontmatter title 覆盖导致意外显示英文或不期望的文本。
 - 自动把 Wiki 链接形式 [[目标]] 转成对应笔记的网页链接（如果能解析到目标笔记），让内部引用可点击。
 - 避免同名冲突：别名映射优先使用相对路径（不含扩展名），仅在文件名唯一时才把 basename 作为别名。
+- 同步为每篇公开笔记生成 notes/<路径>/index.html，渲染正文并把 [[Wiki 链接]] 转成基于 site_base 的绝对链接，
+  避免笔记页从子目录打开时相对链接解析错误（404）。
 """
 from pathlib import Path
 import argparse
@@ -35,6 +37,7 @@ DEFAULT_CONFIG = {
     "encode_urls": True,
     "output": "index.html",
     "json_output": "notes.json",   # 新增：生成的 JSON 文件名
+    "generate_note_pages": True,  # 是否为每篇公开笔记生成 notes/<路径>/index.html 并转换 [[Wiki 链接]]
     "title": "我的知识库",
     "backup": True,
     "max_backups": 5,
@@ -239,6 +242,189 @@ def convert_wiki_links_to_text(text: str) -> str:
         return label if label else target
     return WIKI_RE.sub(repl, text)
 
+# --- Note page rendering helpers ---
+def strip_frontmatter(text: str) -> str:
+    """去掉开头的 YAML frontmatter 块，返回正文。"""
+    if not text.startswith('---'):
+        return text
+    m = re.match(r'^---\s*\n.*?\n---\s*\n', text, re.S)
+    if m:
+        return text[m.end():]
+    return text
+
+def _inline_md(s: str) -> str:
+    """极简行内 markdown 渲染（加粗/斜体/行内代码/链接），会先做 HTML 转义。"""
+    s = html.escape(s, quote=False)
+    s = re.sub(r'`([^`]+)`', lambda m: '<code>' + m.group(1) + '</code>', s)
+    s = re.sub(
+        r'\[([^\]\[]+)\]\(([^)\s]+)\)',
+        lambda m: '<a href="' + html.escape(m.group(2)) + '">' + m.group(1) + '</a>',
+        s,
+    )
+    s = re.sub(r'\*\*([^*]+)\*\*', lambda m: '<strong>' + m.group(1) + '</strong>', s)
+    s = re.sub(r'__([^_]+)__', lambda m: '<strong>' + m.group(1) + '</strong>', s)
+    s = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', lambda m: '<em>' + m.group(1) + '</em>', s)
+    s = re.sub(r'(?<!_)_([^_]+)_(?!_)', lambda m: '<em>' + m.group(1) + '</em>', s)
+    return s
+
+def _md_simple(text: str) -> str:
+    """无第三方依赖的轻量 markdown → HTML 渲染器。
+    支持代码块、标题、水平线、引用、无序/有序列表与段落。
+    """
+    lines = text.split('\n')
+    n = len(lines)
+    out = []
+    i = 0
+    list_open = None
+
+    def close_list():
+        nonlocal list_open
+        if list_open:
+            out.append(f'</{list_open}>')
+            list_open = None
+
+    while i < n:
+        line = lines[i].strip()
+        if not line:
+            close_list()
+            i += 1
+            continue
+
+        # 围栏代码块
+        if line.startswith('```') or line.startswith('~~~'):
+            close_list()
+            lang = line[3:].strip()
+            out.append('<pre><code' + (f' class="language-{html.escape(lang)}">' if lang else '>'))
+            i += 1
+            code = []
+            while i < n and not lines[i].strip().startswith(('```', '~~~')):
+                code.append(lines[i])
+                i += 1
+            out.append(html.escape('\n'.join(code)))
+            out.append('</code></pre>')
+            i += 1  # 跳过闭合围栏
+            continue
+
+        # 标题
+        m = re.match(r'^(#{1,6})\s+(.*)$', line)
+        if m:
+            close_list()
+            level = len(m.group(1))
+            out.append(f'<h{level}>{_inline_md(m.group(2))}</h{level}>')
+            i += 1
+            continue
+
+        # 水平线
+        if re.match(r'^(-{3,}|\*{3,}|_{3,})$', line):
+            close_list()
+            out.append('<hr />')
+            i += 1
+            continue
+
+        # 引用
+        if line.startswith('>'):
+            close_list()
+            quote = []
+            while i < n and lines[i].strip().startswith('>'):
+                quote.append(lines[i].strip()[1:].lstrip())
+                i += 1
+            out.append(f'<blockquote>\n{_md_simple(chr(10).join(quote))}\n</blockquote>')
+            continue
+
+        # 列表
+        m = re.match(r'^([-*+]|\d+[.)])\s+(.*)$', line)
+        if m:
+            tag = 'ol' if m.group(1)[0].isdigit() else 'ul'
+            if list_open != tag:
+                close_list()
+                out.append(f'<{tag}>')
+                list_open = tag
+            out.append(f'<li>{_inline_md(m.group(2))}</li>')
+            i += 1
+            continue
+
+        # 段落
+        close_list()
+        para = []
+        while i < n and lines[i].strip():
+            para.append(lines[i].strip())
+            i += 1
+        out.append(f'<p>{_inline_md(" ".join(para))}</p>')
+
+    close_list()
+    return '\n'.join(out)
+
+def markdown_to_html(text: str) -> str:
+    """将 markdown 渲染为 HTML：优先使用 markdown 包，缺失时退回内置轻量渲染器。"""
+    try:
+        import markdown as _md
+        return _md.markdown(text, extensions=['extra', 'sane_lists'])
+    except Exception:
+        return _md_simple(text)
+
+NOTE_PAGE_TEMPLATE = """<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{TITLE}</title>
+<style>body{{font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding:1rem;}}
+a {{ color:#0366d6; text-decoration:none; }}
+a:hover {{ text-decoration:underline; }}
+code {{ background:#f6f8fa; padding:.1em .3em; border-radius:3px; }}
+pre {{ background:#f6f8fa; padding:.5rem; overflow:auto; }}
+pre code {{ padding:0; }}
+blockquote {{ border-left:3px solid #ddd; margin-left:0; padding-left:1rem; color:#555; }}
+li {{ margin:.2rem 0; }}
+</style>
+</head>
+<body>
+<a href="{HOME}">← Home</a>
+<article>
+{BODY}
+</article>
+</body>
+</html>
+"""
+
+def generate_note_page(item, alias_map, cfg, root) -> Path:
+    """
+    为单篇笔记生成 notes/<rel_no_ext>/index.html。
+    正文渲染后把 [[Wiki 链接]] 转成基于 site_base 的绝对链接，避免相对链接 404。
+    返回输出路径；读取失败返回 None。
+    """
+    try:
+        text = item['path'].read_text(encoding='utf-8')
+    except Exception as e:
+        if cfg.get('verbose', False):
+            print("读取笔记失败：", item['path'], e)
+        return None
+
+    content = strip_frontmatter(text)
+    html_body = markdown_to_html(content)
+    # 正文中的 [[目标]] 转成绝对链接（alias_map 的 href 已含 site_base）
+    html_body = convert_wiki_links_in_text(html_body, alias_map)
+
+    title = item.get('display_text') or item.get('basename') or 'Untitled'
+    home = cfg.get('site_base', '/')
+    rel_no_ext = str(Path(item['rel']).with_suffix('')).replace(os.sep, '/')
+    if rel_no_ext.endswith('.'):
+        rel_no_ext = rel_no_ext[:-1]
+    out_dir = root / rel_no_ext
+    out_path = out_dir / 'index.html'
+    page = (NOTE_PAGE_TEMPLATE
+            .replace('{TITLE}', html.escape(title))
+            .replace('{HOME}', html.escape(home))
+            .replace('{BODY}', html_body))
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        atomic_write(out_path, page)
+        return out_path
+    except Exception as e:
+        if cfg.get('verbose', False):
+            print("写入笔记页失败：", out_path, e)
+        return None
+
 # --- Main ---
 def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     # Prefer scanning notes/ subfolder if present so index always reflects current notes/ content.
@@ -314,6 +500,15 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
             alias_map[b] = it['href']
             alias_map[b.lower()] = it['href']
 
+    # 生成每篇公开笔记的 HTML 页面，并把正文中的 [[Wiki 链接]] 转成绝对链接
+    note_pages_written = 0
+    if cfg.get("generate_note_pages", True) and not args.dry_run:
+        for it in items:
+            if generate_note_page(it, alias_map, cfg, root) is not None:
+                note_pages_written += 1
+    elif args.dry_run and cfg.get("generate_note_pages", True):
+        note_pages_written = len(items)
+
     # convert wiki links in display (HTML) and also produce plain text title for JSON
     for it in items:
         it['display_html'] = convert_wiki_links_in_text(it['display_text'], alias_map)
@@ -345,9 +540,9 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
         <title>{PAGE_TITLE}</title>
         <style>
-          body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding: 1rem; }}
-          ul {{ line-height: 1.6; }}
-          small {{ color: #666; margin-left: .5rem; }}
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding: 1rem; }
+          ul { line-height: 1.6; }
+          small { color: #666; margin-left: .5rem; }
         </style>
     </head>
     <body>
@@ -447,6 +642,8 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
         print("=== DRY RUN ===")
         print(f"Will write: {out_path} ({len(items)} items listed).")
         print(f"Will write JSON: {out_json_path} ({len(json_items)} items).")
+        if cfg.get("generate_note_pages", True):
+            print(f"Will write {note_pages_written} per-note HTML pages under notes/.")
         print(f"Excluded by privacy rule: {excluded_privacy} files.")
         return 0
 
@@ -509,6 +706,8 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
             print("写入 notes_modern.json 失败：", e)
 
     print(f"已生成 {out_path}，列出 {len(items)} 个公开笔记（排除 {excluded_privacy} 个私密笔记）。")
+    if cfg.get("generate_note_pages", True):
+        print(f"已生成 {note_pages_written} 个笔记页（notes/**/index.html，内含转换后的 Wiki 链接）。")
     print(f"已生成 {out_json_path}（legacy 格式），并尝试写入 {modern_json_path}（modern 格式）。")
     return 0
 
@@ -519,6 +718,7 @@ def parse_args(argv):
     p.add_argument("--output", "-o", help="output file (overrides config)")
     p.add_argument("--no-encode", action="store_true", help="disable URL encoding")
     p.add_argument("--include-private", action="store_true", help="INCLUDE private notes (override default public-only behavior) — use with caution")
+    p.add_argument("--no-note-pages", action="store_true", help="do not regenerate per-note HTML pages (skip [[Wiki]] link conversion in note bodies)")
     p.add_argument("--dry-run", action="store_true", help="do not write files, just show actions")
     p.add_argument("--verbose", "-v", action="store_true", help="verbose output")
     return p.parse_args(argv)
@@ -533,6 +733,8 @@ def main(argv):
         cfg["encode_urls"] = False
     if args.output:
         cfg["output"] = args.output
+    if args.no_note_pages:
+        cfg["generate_note_pages"] = False
 
     # core privacy: public_only default is True; args.include_private overrides it
     args.include_private = bool(args.include_private)

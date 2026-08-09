@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Generate simple HTML pages from notes/*.md and convert [[Wiki]] links.
 Writes each note to notes/{basename}/index.html so links like notes/name work.
+
+注意：本脚本已由仓库根目录的 generate_index.py 取代（后者会在 CI 中同步生成
+笔记页并转换 [[Wiki]] 链接）。这里保留为独立工具，Wiki 链接使用基于 SITE_BASE
+的绝对地址，避免从 notes/<name>/ 子目录打开时相对链接解析成 404。
 """
 from pathlib import Path
 import re
+import os
 import unicodedata
 import urllib.parse
 import sys
@@ -11,11 +16,12 @@ import sys
 ROOT = Path('.').resolve()
 NOTES_DIR = ROOT / 'notes'
 OUT_DIR = NOTES_DIR  # we'll write notes/<basename>/index.html
+SITE_BASE = os.environ.get('SITE_BASE', 'https://super11double.github.io/my-digital-garden/')
 WIKI_RE = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 
 # read all markdown files
 md_files = sorted([p for p in NOTES_DIR.glob('*.md') if p.is_file()])
-# build alias map: rel_no_ext -> href (notes/<basename>)
+# build alias map: rel_no_ext -> href (absolute URL, safe from 404)
 alias_map = {}
 basename_counts = {}
 for p in md_files:
@@ -25,8 +31,8 @@ for p in md_files:
     # compute path relative to notes/ directory (preserves subdirs)
     rel_no_ext = str(p.relative_to(NOTES_DIR).with_suffix('')).replace('\\','/')
     basename = p.stem
-    # use directory-style href ending with '/'
-    href = f"notes/{urllib.parse.quote(rel_no_ext, safe='/')}/"
+    # use directory-style href ending with '/', prefixed with SITE_BASE (absolute)
+    href = SITE_BASE.rstrip('/') + '/' + 'notes/' + urllib.parse.quote(rel_no_ext, safe='/') + '/'
     # write to notes/<rel_no_ext>/index.html so href 'notes/<rel_no_ext>/' works
     alias_map[rel_no_ext] = href
     alias_map[rel_no_ext.lower()] = href
@@ -96,7 +102,7 @@ for p in md_files:
 <style>body{{font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding:1rem;}}</style>
 </head>
 <body>
-<a href="/">← Home</a>
+<a href="{html_escape(SITE_BASE)}">← Home</a>
 <article>
 {html_body}
 </article>
