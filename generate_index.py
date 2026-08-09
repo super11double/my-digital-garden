@@ -286,12 +286,13 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     # client-side JS which will try to load a modern JSON (notes_modern.json) first and
     # fall back to legacy notes.json if needed. This makes the frontend robust to both
     # older workflows and the newer generator output.
-    content = f"""<!DOCTYPE html>
+page_title = html.escape(cfg.get('title','我的知识库'))
+content = """<!DOCTYPE html>
 <html>
 <head>
     <meta charset=\"utf-8\" />
     <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
-    <title>{html.escape(cfg.get('title','我的知识库'))}</title>
+    <title>{PAGE_TITLE}</title>
     <style>
       body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding: 1rem; }}
       ul {{ line-height: 1.6; }}
@@ -299,17 +300,17 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     </style>
 </head>
 <body>
-    <h1>{html.escape(cfg.get('title','我的知识库'))}</h1>
+    <h1>{PAGE_TITLE}</h1>
     {html_intro}
     <ul id=\"notes-list\">
 {list_html}    </ul>
-
+    
 <script>
 (function(){
   // Try modern file first, then legacy notes.json. Render into #notes-list.
   const listEl = document.getElementById('notes-list');
   const noNotesEl = document.getElementById('no-notes');
-
+    
   function render(items){
     listEl.innerHTML = '';
     if(!items || items.length === 0){
@@ -339,11 +340,11 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
       listEl.appendChild(li);
     });
   }
-
+    
   function fetchJson(url){
     return fetch(url, {cache: 'no-store'}).then(r => { if(!r.ok) throw new Error('not ok'); return r.json(); });
   }
-
+    
   // Attempt modern file
   fetchJson('notes_modern.json').then(render).catch(()=>{
     // fallback to legacy notes.json
@@ -353,10 +354,11 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
   });
 })();
 </script>
-
+    
 </body>
 </html>
 """
+content = content.replace("{PAGE_TITLE}", page_title)
 
     # prepare JSON payload for frontend (modern format)
     # 包含基本字段：href, title (plain text), rel, mtime (秒，或 null)
