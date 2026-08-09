@@ -376,6 +376,9 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     </html>
     """
     content = content.replace("{PAGE_TITLE}", page_title)
+    # Inject server-side generated parts into the HTML template
+    content = content.replace("{html_intro}", html_intro)
+    content = content.replace("{list_html}", list_html)
 
     # prepare JSON payload for frontend (modern format)
     # 包含基本字段：href, title (plain text), rel, mtime (秒，或 null)
