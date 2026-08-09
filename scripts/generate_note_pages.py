@@ -22,13 +22,15 @@ for p in md_files:
     b = p.stem
     basename_counts[b] = basename_counts.get(b, 0) + 1
 for p in md_files:
-    rel_no_ext = str(p.with_suffix('')).replace('\\','/')
+    # compute path relative to notes/ directory (preserves subdirs)
+    rel_no_ext = str(p.relative_to(NOTES_DIR).with_suffix('')).replace('\\','/')
     basename = p.stem
     # use directory-style href ending with '/'
-    href = f"notes/{urllib.parse.quote(rel_no_ext, safe='')}/"
-    # write to notes/<basename>/index.html so href 'notes/basename/' works
+    href = f"notes/{urllib.parse.quote(rel_no_ext, safe='/')}/"
+    # write to notes/<rel_no_ext>/index.html so href 'notes/<rel_no_ext>/' works
     alias_map[rel_no_ext] = href
     alias_map[rel_no_ext.lower()] = href
+    # add basename keys only when unique
     if basename_counts.get(basename,0) == 1:
         alias_map[basename] = href
         alias_map[basename.lower()] = href
@@ -69,14 +71,21 @@ for p in md_files:
         parts = content.split('---', 2)
         if len(parts) >= 3:
             content = parts[2]
-    # convert wiki links inside
-    content = convert_wiki(content)
     # convert markdown to html if possible
     if has_md:
         html_body = markdown.markdown(content, extensions=['extra','sane_lists'])
+        # convert wiki links in the resulting HTML (replace [[...]] with anchors)
+        html_body = convert_wiki(html_body)
     else:
-        # very simple fallback: wrap paragraphs
-        html_body = '\n'.join(f'<p>{html_escape(line)}</p>' for line in content.splitlines() if line.strip())
+        # very simple fallback: escape plain text then convert wiki links so anchors are not double-escaped
+        parts = []
+        for line in content.splitlines():
+            if not line.strip():
+                continue
+            escaped = html_escape(line)
+            processed = convert_wiki(escaped)
+            parts.append(f'<p>{processed}</p>')
+        html_body = '\n'.join(parts)
     title = p.stem
     page = f"""<!doctype html>
 <html>
