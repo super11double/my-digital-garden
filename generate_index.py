@@ -40,9 +40,10 @@ DEFAULT_CONFIG = {
     "max_backups": 5,
     "cache_file": ".generate_index_cache.json",
     "public_only": True,   # 核心：默认只列出 share: true 的笔记
-    # 网站根路径（用于生成在 GitHub Pages 上可靠的绝对 href）
-    # 对于 project pages，通常是 '/{repo-name}/'，可通过环境变量或 CLI 修改
-    "site_base": "/my-digital-garden/",
+    # 网站根路径（用于生成在 GitHub Pages 上可靠的链接）
+    # 可设为绝对 URL（推荐，兼容性最好），例如 'https://USERNAME.github.io/REPO/'
+    # 或相对根路径 '/my-digital-garden/'。可通过环境变量或 CLI 修改。
+    "site_base": "https://super11double.github.io/my-digital-garden/",
 }
 
 # --- Helpers ---
@@ -136,20 +137,30 @@ def make_href(rel_path: Path, encode: bool, base: str = '/') -> str:
     # normalize base
     if not base:
         base = '/'
-    if not base.startswith('/'):
-        base = '/' + base
-    if not base.endswith('/'):
-        base = base + '/'
-    # encode path preserving slashes when requested
-    if encode:
-        url_part = urllib.parse.quote(url_path, safe='/%23%25%5B%5D@!$&\'()*+,;=')
+    # If base looks like an absolute URL (http/https), keep as-is; otherwise normalize as a root-relative path
+    if base.startswith('http://') or base.startswith('https://'):
+        abs_base = base
+        if not abs_base.endswith('/'):
+            abs_base = abs_base + '/'
+        if encode:
+            url_part = urllib.parse.quote(url_path, safe='/%23%25%5B%5D@!$&\'()*+,;=')
+        else:
+            url_part = url_path
+        return abs_base.rstrip('/') + '/' + url_part
     else:
-        url_part = url_path
-    # join base and url_part, avoid duplicate slashes
-    if base == '/':
-        return '/' + url_part
-    else:
-        return base.rstrip('/') + '/' + url_part
+        # treat as root-relative
+        if not base.startswith('/'):
+            base = '/' + base
+        if not base.endswith('/'):
+            base = base + '/'
+        if encode:
+            url_part = urllib.parse.quote(url_path, safe='/%23%25%5B%5D@!$&\'()*+,;=')
+        else:
+            url_part = url_path
+        if base == '/':
+            return '/' + url_part
+        else:
+            return base.rstrip('/') + '/' + url_part
 
 def html_item_line(href: str, display: str, mtime: float = None) -> str:
     # display 可能包含 HTML（例如已转换的 [[Wiki]] 链接），如果包含 <a 则认为已安全构造，避免再次转义
