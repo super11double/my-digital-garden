@@ -210,7 +210,7 @@ def convert_wiki_links_to_text(text: str) -> str:
 def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     files, excluded_privacy = scan_markdown_files(root, cfg, include_private=args.include_private, verbose=args.verbose)
     if args.verbose:
-        print(f"🔎 Found {len(files)} public markdown files (excluded_by_privacy={excluded_privacy}) under {root}")
+        print(f"Found {len(files)} public markdown files (excluded_by_privacy={excluded_privacy}) under {root}")
 
     out_path = root / cfg["output"]
     out_json_path = root / cfg.get("json_output", "notes.json")
@@ -286,79 +286,79 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     # client-side JS which will try to load a modern JSON (notes_modern.json) first and
     # fall back to legacy notes.json if needed. This makes the frontend robust to both
     # older workflows and the newer generator output.
-page_title = html.escape(cfg.get('title','我的知识库'))
-content = """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset=\"utf-8\" />
-    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
-    <title>{PAGE_TITLE}</title>
-    <style>
-      body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding: 1rem; }}
-      ul {{ line-height: 1.6; }}
-      small {{ color: #666; margin-left: .5rem; }}
-    </style>
-</head>
-<body>
-    <h1>{PAGE_TITLE}</h1>
-    {html_intro}
-    <ul id=\"notes-list\">
-{list_html}    </ul>
-    
-<script>
-(function(){
-  // Try modern file first, then legacy notes.json. Render into #notes-list.
-  const listEl = document.getElementById('notes-list');
-  const noNotesEl = document.getElementById('no-notes');
-    
-  function render(items){
-    listEl.innerHTML = '';
-    if(!items || items.length === 0){
-      if(noNotesEl) noNotesEl.style.display = '';
-      return;
-    }
-    if(noNotesEl) noNotesEl.style.display = 'none';
-    items.forEach(it => {
-      let href = '#';
-      let title = '';
-      if(it.href){ href = it.href; }
-      else if(it.path){ href = it.path; }
-      else if(it.slug){ try{ href = decodeURIComponent(it.slug); }catch(e){ href = it.slug } }
-      title = it.title || it.name || it["rel"] || it["path"] || it["href"] || '';
-      const li = document.createElement('li');
-      const a = document.createElement('a');
-      a.href = href;
-      a.textContent = title;
-      li.appendChild(a);
-      if(it.mtime){
-        const s = document.createElement('small');
-        const d = new Date(it.mtime * 1000);
-        s.textContent = `(${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')})`;
-        li.appendChild(document.createTextNode(' '));
-        li.appendChild(s);
+    page_title = html.escape(cfg.get('title','我的知识库'))
+    content = """<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset=\"utf-8\" />
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+        <title>{PAGE_TITLE}</title>
+        <style>
+          body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding: 1rem; }}
+          ul {{ line-height: 1.6; }}
+          small {{ color: #666; margin-left: .5rem; }}
+        </style>
+    </head>
+    <body>
+        <h1>{PAGE_TITLE}</h1>
+        {html_intro}
+        <ul id=\"notes-list\">
+    {list_html}    </ul>
+        
+    <script>
+    (function(){
+      // Try modern file first, then legacy notes.json. Render into #notes-list.
+      const listEl = document.getElementById('notes-list');
+      const noNotesEl = document.getElementById('no-notes');
+        
+      function render(items){
+        listEl.innerHTML = '';
+        if(!items || items.length === 0){
+          if(noNotesEl) noNotesEl.style.display = '';
+          return;
+        }
+        if(noNotesEl) noNotesEl.style.display = 'none';
+        items.forEach(it => {
+          let href = '#';
+          let title = '';
+          if(it.href){ href = it.href; }
+          else if(it.path){ href = it.path; }
+          else if(it.slug){ try{ href = decodeURIComponent(it.slug); }catch(e){ href = it.slug } }
+          title = it.title || it.name || it["rel"] || it["path"] || it["href"] || '';
+          const li = document.createElement('li');
+          const a = document.createElement('a');
+          a.href = href;
+          a.textContent = title;
+          li.appendChild(a);
+          if(it.mtime){
+            const s = document.createElement('small');
+            const d = new Date(it.mtime * 1000);
+            s.textContent = `(${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')})`;
+            li.appendChild(document.createTextNode(' '));
+            li.appendChild(s);
+          }
+          listEl.appendChild(li);
+        });
       }
-      listEl.appendChild(li);
-    });
-  }
-    
-  function fetchJson(url){
-    return fetch(url, {cache: 'no-store'}).then(r => { if(!r.ok) throw new Error('not ok'); return r.json(); });
-  }
-    
-  // Attempt modern file
-  fetchJson('notes_modern.json').then(render).catch(()=>{
-    // fallback to legacy notes.json
-    fetchJson('notes.json').then(render).catch(()=>{
-      // leave server-side content as-is (or empty message)
-    });
-  });
-})();
-</script>
-    
-</body>
-</html>
-"""
-content = content.replace("{PAGE_TITLE}", page_title)
+        
+      function fetchJson(url){
+        return fetch(url, {cache: 'no-store'}).then(r => { if(!r.ok) throw new Error('not ok'); return r.json(); });
+      }
+        
+      // Attempt modern file
+      fetchJson('notes_modern.json').then(render).catch(()=>{
+        // fallback to legacy notes.json
+        fetchJson('notes.json').then(render).catch(()=>{
+          // leave server-side content as-is (or empty message)
+        });
+      });
+    })();
+    </script>
+        
+    </body>
+    </html>
+    """
+    content = content.replace("{PAGE_TITLE}", page_title)
 
     # prepare JSON payload for frontend (modern format)
     # 包含基本字段：href, title (plain text), rel, mtime (秒，或 null)
@@ -400,16 +400,16 @@ content = content.replace("{PAGE_TITLE}", page_title)
         try:
             shutil.copy2(out_path, bak)
             if args.verbose:
-                print(f"🔁  备份旧的 {out_path} -> {bak}")
+                print(f"备份旧的 {out_path} -> {bak}")
             rotate_backups(out_path, cfg.get("max_backups", 5), verbose=args.verbose)
         except Exception as e:
-            print("⚠️  备份失败：", e)
+            print("备份失败：", e)
 
     # write index.html
     try:
         atomic_write(out_path, content)
     except Exception as e:
-        print("❌ 写入失败：", e)
+        print("写入失败：", e)
         return 2
 
     # backup notes.json
@@ -419,17 +419,17 @@ content = content.replace("{PAGE_TITLE}", page_title)
         try:
             shutil.copy2(out_json_path, bakj)
             if args.verbose:
-                print(f"🔁  备份旧的 {out_json_path} -> {bakj}")
+                print(f"备份旧的 {out_json_path} -> {bakj}")
             rotate_backups(out_json_path, cfg.get("max_backups", 5), verbose=args.verbose)
         except Exception as e:
             if args.verbose:
-                print("⚠️  JSON 备份失败：", e)
+                print("JSON 备份失败：", e)
 
     # write legacy-format notes.json (for older frontends)
     try:
         atomic_write(out_json_path, legacy_content)
     except Exception as e:
-        print("❌ 写入 notes.json 失败（legacy）：", e)
+        print("写入 notes.json 失败（legacy)：", e)
         return 2
 
     # also write a modern JSON file with richer fields (notes_modern.json)
@@ -442,17 +442,17 @@ content = content.replace("{PAGE_TITLE}", page_title)
             try:
                 shutil.copy2(modern_json_path, bakm)
                 if args.verbose:
-                    print(f"🔁  备份旧的 {modern_json_path} -> {bakm}")
+                    print(f"备份旧的 {modern_json_path} -> {bakm}")
                 rotate_backups(modern_json_path, cfg.get("max_backups", 5), verbose=args.verbose)
             except Exception:
                 pass
         atomic_write(modern_json_path, json_content)
     except Exception as e:
         if args.verbose:
-            print("⚠️ 写入 notes_modern.json 失败：", e)
+            print("写入 notes_modern.json 失败：", e)
 
-    print(f"✅ 已生成 {out_path}，列出 {len(items)} 个公开笔记（排除 {excluded_privacy} 个私密笔记）。")
-    print(f"✅ 已生成 {out_json_path}（legacy 格式，用于旧前端），并尝试写入 {modern_json_path}（modern 格式）。")
+    print(f"已生成 {out_path}，列出 {len(items)} 个公开笔记（排除 {excluded_privacy} 个私密笔记）。")
+    print(f"已生成 {out_json_path}（legacy 格式），并尝试写入 {modern_json_path}（modern 格式）。")
     return 0
 
 
