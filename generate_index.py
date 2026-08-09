@@ -286,78 +286,78 @@ def build_index(root: Path, cfg: dict, args: argparse.Namespace) -> int:
     # client-side JS which will try to load a modern JSON (notes_modern.json) first and
     # fall back to legacy notes.json if needed. This makes the frontend robust to both
     # older workflows and the newer generator output.
-page_title = html.escape(cfg.get('title','我的知识库'))
-content = """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset=\"utf-8\" />
-    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
-    <title>{PAGE_TITLE}</title>
-    <style>
-      body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding: 1rem; }}
-      ul {{ line-height: 1.6; }}
-      small {{ color: #666; margin-left: .5rem; }}
-    </style>
-</head>
-<body>
-    <h1>{PAGE_TITLE}</h1>
-    {html_intro}
-    <ul id=\"notes-list\">
-{list_html}    </ul>
-    
-<script>
-(function(){
-  // Try modern file first, then legacy notes.json. Render into #notes-list.
-  const listEl = document.getElementById('notes-list');
-  const noNotesEl = document.getElementById('no-notes');
-    
-  function render(items){
-    listEl.innerHTML = '';
-    if(!items || items.length === 0){
-      if(noNotesEl) noNotesEl.style.display = '';
-      return;
-    }
-    if(noNotesEl) noNotesEl.style.display = 'none';
-    items.forEach(it => {
-      let href = '#';
-      let title = '';
-      if(it.href){ href = it.href; }
-      else if(it.path){ href = it.path; }
-      else if(it.slug){ try{ href = decodeURIComponent(it.slug); }catch(e){ href = it.slug } }
-      title = it.title || it.name || it["rel"] || it["path"] || it["href"] || '';
-      const li = document.createElement('li');
-      const a = document.createElement('a');
-      a.href = href;
-      a.textContent = title;
-      li.appendChild(a);
-      if(it.mtime){
-        const s = document.createElement('small');
-        const d = new Date(it.mtime * 1000);
-        s.textContent = `(${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')})`;
-        li.appendChild(document.createTextNode(' '));
-        li.appendChild(s);
+    page_title = html.escape(cfg.get('title','我的知识库'))
+    content = """<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset=\"utf-8\" />
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+        <title>{PAGE_TITLE}</title>
+        <style>
+          body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding: 1rem; }}
+          ul {{ line-height: 1.6; }}
+          small {{ color: #666; margin-left: .5rem; }}
+        </style>
+    </head>
+    <body>
+        <h1>{PAGE_TITLE}</h1>
+        {html_intro}
+        <ul id=\"notes-list\">
+    {list_html}    </ul>
+        
+    <script>
+    (function(){
+      // Try modern file first, then legacy notes.json. Render into #notes-list.
+      const listEl = document.getElementById('notes-list');
+      const noNotesEl = document.getElementById('no-notes');
+        
+      function render(items){
+        listEl.innerHTML = '';
+        if(!items || items.length === 0){
+          if(noNotesEl) noNotesEl.style.display = '';
+          return;
+        }
+        if(noNotesEl) noNotesEl.style.display = 'none';
+        items.forEach(it => {
+          let href = '#';
+          let title = '';
+          if(it.href){ href = it.href; }
+          else if(it.path){ href = it.path; }
+          else if(it.slug){ try{ href = decodeURIComponent(it.slug); }catch(e){ href = it.slug } }
+          title = it.title || it.name || it["rel"] || it["path"] || it["href"] || '';
+          const li = document.createElement('li');
+          const a = document.createElement('a');
+          a.href = href;
+          a.textContent = title;
+          li.appendChild(a);
+          if(it.mtime){
+            const s = document.createElement('small');
+            const d = new Date(it.mtime * 1000);
+            s.textContent = `(${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')})`;
+            li.appendChild(document.createTextNode(' '));
+            li.appendChild(s);
+          }
+          listEl.appendChild(li);
+        });
       }
-      listEl.appendChild(li);
-    });
-  }
-    
-  function fetchJson(url){
-    return fetch(url, {cache: 'no-store'}).then(r => { if(!r.ok) throw new Error('not ok'); return r.json(); });
-  }
-    
-  // Attempt modern file
-  fetchJson('notes_modern.json').then(render).catch(()=>{
-    // fallback to legacy notes.json
-    fetchJson('notes.json').then(render).catch(()=>{
-      // leave server-side content as-is (or empty message)
-    });
-  });
-})();
-</script>
-    
-</body>
-</html>
-"""
+        
+      function fetchJson(url){
+        return fetch(url, {cache: 'no-store'}).then(r => { if(!r.ok) throw new Error('not ok'); return r.json(); });
+      }
+        
+      // Attempt modern file
+      fetchJson('notes_modern.json').then(render).catch(()=>{
+        // fallback to legacy notes.json
+        fetchJson('notes.json').then(render).catch(()=>{
+          // leave server-side content as-is (or empty message)
+        });
+      });
+    })();
+    </script>
+        
+    </body>
+    </html>
+    """
     content = content.replace("{PAGE_TITLE}", page_title)
 
     # prepare JSON payload for frontend (modern format)
