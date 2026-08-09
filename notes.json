@@ -1,4 +1,22 @@
-{
-    "tags": "note",
-    "templateEngineOverride": "md"
-}
+[
+  {
+    "title": "公开",
+    "path": "notes/公开"
+  },
+  {
+    "title": "love",
+    "path": "notes/love"
+  },
+  {
+    "title": "study",
+    "path": "notes/study"
+  },
+  {
+    "title": "头脑风暴",
+    "path": "notes/头脑风暴"
+  },
+  {
+    "title": "爱情",
+    "path": "notes/爱情"
+  }
+]
